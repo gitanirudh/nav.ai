@@ -1,0 +1,5 @@
+[
+    { "type": "goto", "url": "https://linear.app/" },
+    { "type": "wait", "seconds": 180 }
+  ]
+  

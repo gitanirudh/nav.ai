@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Agent B Test Page</title>
+</head>
+<body>
+  <h1>Agent B Demo Page</h1>
+  <button id="newProject">New Project</button>
+  <div id="modal" style="display:none; border:1px solid #aaa; padding:20px;">
+    <label>Project Name</label>
+    <input placeholder="Project Name" />
+    <button id="createBtn">Create</button>
+  </div>
+
+  <script>
+    document.getElementById('newProject').onclick = () => {
+      document.getElementById('modal').style.display = 'block';
+    };
+    document.getElementById('createBtn').onclick = () => {
+      document.getElementById('modal').innerHTML = '<h2>✅ Project Created!</h2>';
+    };
+  </script>
+</body>
+</html>

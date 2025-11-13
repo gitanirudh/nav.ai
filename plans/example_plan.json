@@ -1,0 +1,7 @@
+[
+    { "type": "goto", "url": "file:///mnt/c/Users/aniru/OneDrive/Desktop/nav.ai/test.html" },
+    { "type": "click", "target": "New Project" },
+    { "type": "type", "target": "Project Name", "text": "Demo Project" },
+    { "type": "click", "target": "Create" }
+  ]
+  

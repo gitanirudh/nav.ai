@@ -1,0 +1,11 @@
+[
+    { "type": "goto", "url": "https://linear.app/" },
+    { "type": "click", "target": "Projects" },
+    { "type": "wait", "seconds": 2 },
+    { "type": "click", "target": "Add project" },
+    { "type": "wait", "seconds": 1 },
+    { "type": "type", "target": "project", "text": "AutoTest_Project" },
+    { "type": "wait", "seconds": 1 },
+    { "type": "click", "target": "Create project" }
+  ]
+  
