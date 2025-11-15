@@ -1,292 +1,346 @@
+
+// const fs = require("fs-extra");
+// const path = require("path");
+// const { chromium } = require("playwright");
+
+// const PLAN_PATH = path.join(__dirname, "captured_plan.json");
+// const OUT_DIR = path.join(__dirname, "captures");
+// fs.ensureDirSync(OUT_DIR);
+
+// async function recordUserFlow() {
+//   const userDataDir = path.join(__dirname, "pw-user-data");
+//   const sessionFile = path.join(__dirname, "linear-state.json");
+
+//   const ctx = await chromium.launchPersistentContext(userDataDir, {
+//     headless: false,
+//     viewport: { width: 1440, height: 900 },
+//     args: [
+//       "--disable-blink-features=AutomationControlled",
+//       "--no-sandbox",
+//       "--disable-infobars",
+//     ],
+//   });
+
+//   const page = await ctx.newPage();
+
+//   if (fs.existsSync(sessionFile)) {
+//     console.log("✅ Using existing Linear session...");
+//   } else {
+//     console.log("⚠️ No session found — please log in manually once.");
+//   }
+
+//   console.log("🌐 Navigating to https://linear.app/ ...");
+//   await page.goto("https://linear.app/", { waitUntil: "domcontentloaded" });
+
+//   console.log("⏳ Waiting for Linear dashboard (up to 25s)...");
+//   await page.waitForTimeout(5000);
+//   await page.waitForSelector("body", { timeout: 25000 }).catch(() => {});
+//   console.log("✅ Page loaded, injecting recorder...");
+
+//   const actions = [];
+
+//   // Expose recorder function so the browser can call Node
+//   await page.exposeFunction("___recordAction", (data) => {
+//     actions.push({ ...data, ts: Date.now() });
+//     console.log(`${data.type.toUpperCase()} →`, data.selector, data.value || "");
+//   });
+
+//   // Inject listener script inside browser context
+//   await page.evaluate(() => {
+//     const getSelector = (el) => {
+//       if (!el || el === document.body) return "body";
+//       let path = [];
+//       while (el && el.nodeType === 1 && el !== document.body) {
+//         let sel = el.tagName.toLowerCase();
+//         if (el.id) {
+//           sel += `#${el.id}`;
+//           path.unshift(sel);
+//           break;
+//         } else if (el.classList.length > 0) {
+//           sel += "." + Array.from(el.classList).slice(0, 2).join(".");
+//         }
+//         path.unshift(sel);
+//         el = el.parentElement;
+//       }
+//       return path.join(" > ");
+//     };
+
+//     const handlerClick = (e) => {
+//       window.___recordAction({
+//         type: "click",
+//         selector: getSelector(e.target),
+//       });
+//     };
+
+//     const handlerInput = (e) => {
+//       const val =
+//         e.target?.value ??
+//         (e.target?.innerText?.trim() || e.target?.textContent?.trim());
+//       window.___recordAction({
+//         type: "input",
+//         selector: getSelector(e.target),
+//         value: val || "",
+//       });
+//     };
+
+//     window.addEventListener("click", handlerClick, true);
+//     window.addEventListener("input", handlerInput, true);
+//     window.addEventListener("change", handlerInput, true);
+
+//     console.log("✅ Recorder script injected in page context");
+//   });
+
+//   console.log("🎥 Recording started!");
+//   console.log("👉 Perform your flow manually:");
+//   console.log("   1. Go to Workspace → Projects");
+//   console.log("   2. Click Add Project");
+//   console.log("   3. Type Project name");
+//   console.log("   4. Click Create Project");
+//   console.log("🧩 When done, close the browser window or press Ctrl+C.");
+
+//   // Wait until user closes browser
+//   await new Promise((resolve) => ctx.on("close", resolve));
+
+//   // Save recorded actions
+//   await fs.writeJson(PLAN_PATH, actions, { spaces: 2 });
+//   console.log(`✅ Recording complete — saved ${actions.length} actions to ${PLAN_PATH}`);
+
+//   await ctx.close();
+// }
+
+// recordUserFlow().catch(console.error);
+
+
+/**
+ * Agent Linear – autonomous browser agent for Linear.app
+ * Behaviorally simulates agent reasoning over your working script
+ */
+
+/**
+ * Agent Linear – Autonomous project creator with smart load detection
+ */
+
+/**
+ * Agent Linear – with adaptive DOM introspection
+ */
+
+const { chromium } = require('playwright');
 const fs = require('fs-extra');
 const path = require('path');
-const { chromium } = require('playwright');
 
-const OUT_DIR = path.resolve(__dirname, 'captures');
+const SESSION_FILE = path.join(__dirname, 'linear-state.json');
+const USERDATA_DIR = path.join(__dirname, 'pw-user-data');
+const OUT_DIR = path.join(__dirname, 'captures');
 fs.ensureDirSync(OUT_DIR);
 
-async function saveSnapshot(page, name, meta = {}) {
-  const ts = new Date().toISOString().replace(/[:.]/g,'-');
-  const fname = `${ts}__${name}.png`;
-  const htmlname = `${ts}__${name}.html`;
-  const p = path.join(OUT_DIR, fname);
-  const h = path.join(OUT_DIR, htmlname);
+async function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+async function saveSnapshot(page, name) {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const p = path.join(OUT_DIR, `${ts}_${name}.png`);
   await page.screenshot({ path: p, fullPage: true });
-  const html = await page.content();
-  await fs.writeFile(h, html);
-  const metadata = { name, path: p, htmlPath: h, ts, ...meta };
-  await fs.appendFile(path.join(OUT_DIR, 'log.jsonl'), JSON.stringify(metadata) + '\n');
-  console.log('Saved snapshot', p);
-  return metadata;
+  console.log(`📸 Snapshot: ${p}`);
 }
 
-const IN_PAGE_SCRIPT = `
-(() => {
-  window.__captureEvents = [];
-  const mo = new MutationObserver((mutations) => {
-    let added = 0, removed = 0, attrs = 0;
-    for (const m of mutations) {
-      added += (m.addedNodes || []).length;
-      removed += (m.removedNodes || []).length;
-      if (m.type === 'attributes') attrs++;
-    }
-    window.__lastMutation = { added, removed, attrs, time: Date.now() };
-    window.__captureEvents.push({type:'mutation', added, removed, attrs, time: Date.now()});
-    if (window.__captureEvents.length > 200) window.__captureEvents.shift();
-  });
-  mo.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['style','class','aria-hidden','hidden'] });
-
-  window.addEventListener('focus', (e) => {
-    try {
-      const tag = document.activeElement && document.activeElement.tagName;
-      window.__captureEvents.push({type:'focus', tag, time: Date.now()});
-    } catch(e){}
-  }, true);
-
-  window.__checkOverlay = () => {
-    const overlays = [];
-    const all = Array.from(document.querySelectorAll('body *'));
-    all.forEach(el => {
-      const r = el.getBoundingClientRect();
-      const style = window.getComputedStyle(el);
-      if (!style || style.visibility === 'hidden' || style.display === 'none') return;
-      if ((style.position === 'fixed' || style.position === 'absolute') && r.width > window.innerWidth * 0.3 && r.height > 100) {
-        const z = parseInt(style.zIndex || 0) || 0;
-        overlays.push({tag: el.tagName, z, rect: r.toJSON(), ariaRole: el.getAttribute('role')});
-      }
-    });
-    window.__captureEvents.push({type:'overlay-scan', overlays, time: Date.now()});
-    return overlays;
-  };
-
-  setInterval(window.__checkOverlay, 800);
-})();
-`;
-
-async function resolveSelector(page, action) {
-    const text = (action.target || "").trim();
-    if (!text) {
-      console.warn("⚠️ No text provided in action.target");
-      return null;
-    }
-  
-    const lowered = text.toLowerCase();
-  
-    // --- Special case: Workspace -> Projects ---
-    if (lowered === "projects") {
-        const workspaceProjectsHandle = await page.evaluateHandle(() => {
-            const normalize = s => s?.toLowerCase().trim();
-            const headings = Array.from(document.querySelectorAll("aside, nav, [data-testid*='sidebar'], [role='navigation'] *"));
-            for (const h of headings) {
-              if (normalize(h.textContent).includes("workspace")) {
-                const match = Array.from(h.parentElement.querySelectorAll("a, div, span, button"))
-                  .find(el => normalize(el.textContent).includes("projects"));
-                if (match) return match;
-              }
-            }
-            return null;
-          });
-          
-          if (workspaceProjectsHandle) {
-            const elHandle = workspaceProjectsHandle.asElement();
-            if (elHandle) {
-              console.log("✅ Found 'Projects' inside Workspace sidebar");
-              return elHandle; // <-- Now a true ElementHandle, not a JSHandle
-            }
-          }
-        }
-  
-    // --- Add project button ---
-    if (lowered.includes("add project")) {
-      const addSel = `xpath=//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'add project')
-        or contains(.,'+ Add project') or @aria-label='Add project']`;
-      const el = await page.$(addSel);
-      if (el && await el.isVisible()) {
-        console.log("✅ Found 'Add project' button");
-        return addSel;
-      }
-    }
-  
-    // --- Create project button ---
-    if (lowered.includes("create project")) {
-      const createSel = `xpath=//button[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'create project')
-        or contains(@class,'sc-cpSJdf')]`;
-      const el = await page.$(createSel);
-      if (el && await el.isVisible()) {
-        console.log("✅ Found 'Create project' button");
-        return createSel;
-      }
-    }
-  
-    // --- Fallback search for text matches ---
-    const fallbackSelectors = [
-      `xpath=//*[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lowered}')]`,
-      `xpath=//*[@aria-label and contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lowered}')]`,
-      `xpath=//*[@role='button' and contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'${lowered}')]`
-    ];
-  
-    for (const selector of fallbackSelectors) {
-      const el = await page.$(selector);
-      if (el && await el.isVisible()) {
-        console.log(`✅ Fallback matched selector: ${selector}`);
-        return selector;
-      }
-    }
-  
-    console.warn("❌ No selector matched for text:", text);
-    return null;
-  }
-  
-  
-
-async function waitForStabilization(page, timeout = 3000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    const last = await page.evaluate(() => window.__lastMutation ? window.__lastMutation.time : 0);
-    const now = Date.now();
-    if (!last || now - last > 600) {
-      await page.waitForTimeout(200);
-      return;
-    }
-    await page.waitForTimeout(150);
-  }
+async function elementExists(page, locator) {
+  const el = await page.$(locator);
+  return !!(el && await el.isVisible());
 }
 
-async function runPlan(plan, opts = { headless: false }) {
-    // Path for persistent user profile and saved session
-    const userDataDir = path.join(__dirname, 'pw-user-data');
-    const sessionFile = path.join(__dirname, 'linear-state.json');
-  
-    // Launch persistent browser context (real user profile)
-    const ctx = await chromium.launchPersistentContext(userDataDir, {
-      headless: opts.headless,
+class LinearAgent {
+  constructor(goal) {
+    this.goal = goal.toLowerCase();
+    this.projectName = this.extractProjectName();
+  }
+
+  extractProjectName() {
+    const m = this.goal.match(/project (?:called|named)?\s*([a-zA-Z0-9_\-]+)/);
+    return m ? m[1] : `Auto_${Date.now().toString().slice(-4)}`;
+  }
+
+  async init() {
+    console.log(`🧠 Goal: "${this.goal}"`);
+    console.log(`💡 Parsed intent: create project named "${this.projectName}"`);
+    this.ctx = await chromium.launchPersistentContext(USERDATA_DIR, {
+      headless: false,
       viewport: { width: 1280, height: 800 },
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox',
-        '--disable-infobars',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process'
-      ]
+      args: ['--disable-blink-features=AutomationControlled', '--no-sandbox']
     });
-  
-    if (fs.existsSync(sessionFile)) {
-      console.log('✅ Using existing Linear session...');
-    } else {
-      console.log('⚠️ No session found — starting fresh login context...');
-    }
-  
-    const page = await ctx.newPage();
-    await page.addInitScript(IN_PAGE_SCRIPT);
-  
-    let step = 0;
-    for (const action of plan) {
-      step++;
-  
-      if (action.type === 'goto') {
-        console.log('Navigating to', action.url);
-        await page.goto(action.url, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(1200);
-        await saveSnapshot(page, `step-${step}-page-load`, { action });
-        continue;
-      }
-  
-      await saveSnapshot(page, `step-${step}-pre`, { action });
-  
-      if (action.type === 'click') {
-        const selectorOrHandle = await resolveSelector(page, action);
-        if (!selectorOrHandle) {
-          console.warn('Selector not found for', action.target);
-          await saveSnapshot(page, `step-${step}-notfound`, { action });
-          continue;
-        }
-      
-        try {
-            if (typeof selectorOrHandle === 'string') {
-              await page.click(selectorOrHandle, { timeout: 5000 });
-            } else {
-              console.log("👉 Clicking resolved element handle");
-              await selectorOrHandle.evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-              await selectorOrHandle.click({ delay: 120 });
-            }
-          } catch (e) {
-            console.warn('click failed', e.message);
-          }
-          
-      }
-       else if (action.type === 'type') {
-        const label = (action.target || "").trim().toLowerCase();
-        const value = action.text || "";
-        console.log(`⌨️ Typing into "${label}" → "${value}"`);
-      
-        // Wait for modal input to appear
-        await page.waitForTimeout(1000);
-      
-        // Linear project name field: contenteditable div inside a modal
-        const selectors = [
-          `xpath=//div[@role='textbox' and @contenteditable='true' and not(@aria-hidden='true')]`,
-          `xpath=//div[@contenteditable='true' and not(@aria-hidden='true')]`,
-          `xpath=//*[self::input or self::textarea or @contenteditable='true' or @role='textbox']`
-        ];
-      
-        let inputHandle = null;
-        for (const sel of selectors) {
-          const el = await page.$(sel);
-          if (el && await el.isVisible()) {
-            inputHandle = el;
-            console.log(`✅ Found editable field via ${sel}`);
-            break;
-          }
-        }
-      
-        if (!inputHandle) {
-          console.warn('❌ No editable field found for', label);
-          await saveSnapshot(page, `step-${step}-input-notfound`, { action });
-        } else {
-          try {
-            await inputHandle.focus();
-            await page.keyboard.press('Control+A').catch(()=>{});
-            await page.keyboard.press('Backspace').catch(()=>{});
-            await page.keyboard.type(value, { delay: 70 });
-            console.log(`✅ Typed "${value}" successfully`);
-            await saveSnapshot(page, `step-${step}-input-filled`, { action });
-          } catch (e) {
-            console.warn('⚠️ Typing failed:', e.message);
-          }
-        }
-      }
-      
-      
-      
-      else if (action.type === 'wait') {
-        const ms = (action.seconds || 10) * 1000;
-        console.log(`⏸️ Waiting ${action.seconds} seconds... log in manually if needed.`);
-        await page.waitForTimeout(ms);
-      }
-    }
-  
-    // ✅ Save updated session
-    await ctx.storageState({ path: sessionFile });
-    console.log('💾 Saved session to', sessionFile);
-  
-    console.log('Plan finished. Captures in', OUT_DIR);
-    await ctx.close(); // Close persistent context
+    this.page = await this.ctx.newPage();
+    console.log(fs.existsSync(SESSION_FILE)
+      ? '✅ Using saved Linear session...'
+      : '⚠️ No saved session, login manually once.');
   }
-  
-  
 
-if (require.main === module) {
-  const planPath = process.env.PLAN || path.join(__dirname, 'plans', 'example_plan.json');
-  let plan = [];
-  try {
-    plan = fs.readJsonSync(planPath);
-  } catch {
-    console.log('No plan file found, running built-in example.');
-    plan = [
-      { type: 'goto', url: 'https://example.com' },
-      { type: 'click', target: 'More information...' }
-    ];
+  async navigate() {
+    console.log('🌐 Navigating to https://linear.app/');
+    await this.page.goto('https://linear.app/', { waitUntil: 'domcontentloaded' });
+    console.log('⏳ Waiting up to 30s for dashboard to load...');
+    await wait(8000); // give React initial render time
+
+    let sidebarVisible = false;
+    for (let i = 0; i < 6; i++) {
+      sidebarVisible = await elementExists(this.page, 'aside, [data-testid*="sidebar"], nav, div:has-text("Projects")');
+      if (sidebarVisible) break;
+      console.log(`  🔁 Sidebar not ready yet (${i+1}/6)...`);
+      await wait(4000);
+    }
+
+    if (!sidebarVisible) {
+      console.warn('⚠️ Sidebar not detected — dumping visible DOM text for analysis:');
+      const textDump = await this.page.evaluate(() =>
+        Array.from(document.querySelectorAll('div,nav,aside,section'))
+          .map(e => e.textContent.trim())
+          .filter(t => t && t.length < 200)
+          .slice(0, 25)
+      );
+      console.log('🧩 Visible snippets:', textDump);
+    }
+
+    await saveSnapshot(this.page, 'dashboard_loaded');
   }
-  runPlan(plan, { headless: !!process.env.HEADLESS }).catch(console.error);
+
+  async goToProjects() {
+    console.log('🧭 Searching for visible "Projects" link in sidebar...');
+    const candidates = [
+      'text=Projects',
+      'div:has-text("Projects")',
+      'a:has-text("Projects")',
+      'nav >> text=Projects',
+      'aside >> text=Projects'
+    ];
+
+    for (const selector of candidates) {
+      const handles = await this.page.$$(selector);
+      for (const handle of handles) {
+        try {
+          if (await handle.isVisible()) {
+            const text = await handle.textContent();
+            console.log(`👉 Attempting click on: "${text?.trim()}" [${selector}]`);
+            await handle.scrollIntoViewIfNeeded();
+            await wait(400);
+            await handle.click({ timeout: 8000, delay: 100 });
+            await wait(3000);
+            await saveSnapshot(this.page, 'projects_page_after_click');
+            console.log('✅ Click succeeded!');
+            return true;
+          }
+        } catch (err) {
+          console.warn(`⚠️ Click failed for ${selector}: ${err.message}`);
+          await wait(1000);
+        }
+      }
+    }
+
+    console.warn('❌ Could not click any visible "Projects" link.');
+    await saveSnapshot(this.page, 'projects_click_failed');
+    return false;
+  }
+
+  async addProject() {
+    console.log('➕ Waiting for Projects page to fully load...');
+
+    // Wait up to 10s for the page to switch after clicking Projects
+    let pageReady = false;
+    for (let i = 0; i < 30; i++) {
+      const hasAddBtn = await elementExists(this.page, 'button:has-text("Add project")');
+      const hasHeader = await elementExists(this.page, 'h1:has-text("Projects"), [role="heading"]:has-text("Projects")');
+      if (hasAddBtn || hasHeader) {
+        pageReady = true;
+        console.log(`✅ Projects page detected (after ${i + 1} checks)`);
+        break;
+      }
+      console.log(`  🔁 Waiting for Projects UI (${i + 1}/10)...`);
+      await wait(1000);
+    }
+
+    if (!pageReady) {
+      console.warn('⚠️ Projects page did not fully load, continuing anyway...');
+    }
+
+    console.log('➕ Searching for "Add project" button...');
+    const addSelectors = [
+      'button:has-text("Add project")',
+      'text="+ Add project"',
+      '[aria-label="Add project"]',
+      'button:has-text("Add Project")'
+    ];
+
+    for (const sel of addSelectors) {
+      try {
+        if (await elementExists(this.page, sel)) {
+          console.log(`✅ Found Add Project button: ${sel}`);
+          const btn = this.page.locator(sel);
+          await btn.scrollIntoViewIfNeeded();
+          await wait(500);
+          await btn.click({ delay: 100 });
+          await wait(3000);
+          await saveSnapshot(this.page, 'add_project_modal');
+          return true;
+        }
+      } catch (err) {
+        console.warn(`⚠️ Click attempt failed on ${sel}: ${err.message}`);
+      }
+    }
+
+    console.warn('❌ Could not find Add Project button after waiting.');
+    await saveSnapshot(this.page, 'add_project_not_found');
+    return false;
+  }
+
+
+
+  async fillProjectName() {
+    console.log(`⌨️ Typing "${this.projectName}"...`);
+    const sels = ['div.ProseMirror.editor', '[contenteditable="true"]', '[role="textbox"]'];
+    for (const s of sels) {
+      const el = await this.page.$(s);
+      if (el && await el.isVisible()) {
+        await el.click();
+        await this.page.keyboard.type(this.projectName, { delay: 70 });
+        await saveSnapshot(this.page, 'filled_name');
+        return true;
+      }
+    }
+    console.warn('❌ Project name field not found.');
+    return false;
+  }
+
+  async createProject() {
+    const sels = ['button:has-text("Create project")', '[data-active="false"].sc-cpSJdf'];
+    for (const s of sels) {
+      if (await elementExists(this.page, s)) {
+        console.log(`✅ Clicking Create via ${s}`);
+        await this.page.locator(s).click();
+        await wait(3000);
+        await saveSnapshot(this.page, 'created');
+        console.log(`🎉 Project "${this.projectName}" created.`);
+        return true;
+      }
+    }
+    console.warn('❌ No Create Project button.');
+    return false;
+  }
+
+  async execute() {
+    await this.init();
+    await this.navigate();
+
+    const ok = await this.goToProjects()
+      && await this.addProject()
+      && await this.fillProjectName()
+      && await this.createProject();
+
+    if (!ok) console.error('💀 Agent failed to complete flow.');
+    else console.log('✅ Agent finished successfully.');
+
+    await this.ctx.storageState({ path: SESSION_FILE });
+    await this.ctx.close();
+  }
 }
+
+(async () => {
+  const goal = process.argv.slice(2).join(' ') || 'create a project named AutoAgent';
+  const agent = new LinearAgent(goal);
+  await agent.execute();
+})();
